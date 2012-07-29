@@ -44,6 +44,7 @@ class File(object):
                 pipe.smembers(self.get_key(path))
                 pipe.get(self.get_hash_key(path))
                 data, h = pipe.execute()
+                data = list(data)
                 m = 'directory'
         return data, h, m, t == 'f'
 

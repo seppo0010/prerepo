@@ -80,3 +80,9 @@ class BaseTestFile(object):
         self.redis.set(':'.join((self.uid, path, 'type')), 'f')
         self.redis.set(':'.join((self.uid, path)), data)
         self.assertEqual(self.f.gethash(path), h)
+
+    def test_list_files(self):
+        files = ('hello', 'world', 'this', 'is', 'a', 'test')
+        for f in files:
+            self.f.createfile('/' + f, '')
+        self.assertEqual(set(self.f.get('/')[0]), set(files))

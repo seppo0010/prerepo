@@ -31,6 +31,8 @@ def resource_response(data, md5, mime, isfile):
         'headers': {'Content-MD5': md5, 'ETag': md5}}
 
 
+@app.route('/api/<uid>/', defaults={'path': ''},
+        methods=('GET', 'POST', 'PUT', 'DELETE', 'HEAD'))
 @app.route('/api/<uid>/<path:path>', methods=('GET', 'POST', 'PUT', 'DELETE',
             'HEAD'))
 def api(path=None, uid=None):
