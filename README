@@ -1,0 +1,5 @@
+Share your code before even commiting.
+
+The project is separated in two areas: client and server. The client is a small
+daemon-like that notifies the changes to the server. The server has an API for
+the daemon client and a web front end to display.
