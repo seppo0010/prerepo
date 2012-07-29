@@ -43,9 +43,22 @@ class File(object):
             with self.redis.pipeline(transaction=False) as pipe:
                 pipe.smembers(self.get_key(path))
                 pipe.get(self.get_hash_key(path))
-                data, h = pipe.execute()
-                data = list(data)
-                m = 'directory'
+                elements, h = pipe.execute()
+
+            m = 'directory'
+            elements = list(elements)
+            with self.redis.pipeline(transaction=False) as pipe:
+                for e in elements:
+                    pipe.get(self.get_mime_key(os.path.join(path, e)))
+                    pipe.get(self.get_hash_key(os.path.join(path, e)))
+                response = list(pipe.execute())
+
+            data = []
+            for e in elements:
+                obj = {'name': e}
+                obj['mime'] = response.pop(0)
+                obj['hash'] = response.pop(0)
+                data.append(obj)
         return data, h, m, t == 'f'
 
     def gethash(self, path):
@@ -60,8 +73,8 @@ class File(object):
             parent, filename = os.path.dirname(path), os.path.basename(path)
             self.createdir(parent)
 
-            with magic.Magic(flags=magic.MAGIC_MIME_TYPE) as m:
-                mime = m.id_buffer(data)
+            with magic.Magic(flags=magic.MAGIC_MIME_TYPE) as mag:
+                mime = mag.id_buffer(data)
 
             with self.redis.pipeline(transaction=True) as pipe:
                 while 1:

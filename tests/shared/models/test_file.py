@@ -85,4 +85,6 @@ class BaseTestFile(object):
         files = ('hello', 'world', 'this', 'is', 'a', 'test')
         for f in files:
             self.f.createfile('/' + f, '')
-        self.assertEqual(set(self.f.get('/')[0]), set(files))
+
+        for f in self.f.get('/')[0]:
+            self.assertIn(f['name'], files)
