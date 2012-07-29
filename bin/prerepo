@@ -167,6 +167,7 @@ if [ $( uname ) = "Darwin" ]; then
 	# This won't solve problem described in osx_readline() But it's good to have
 	# in general outside of random virtualenvs.
 	port_check py27-readline
+	port_check file
 fi
 
 if [ $( uname ) = "Linux" ]; then

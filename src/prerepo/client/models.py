@@ -20,7 +20,8 @@ class File(object):
         return hashlib.md5(data).hexdigest()
 
     def response(self, r):
-        return r.json['data'], r.headers['ETag'], r.json['isfile']
+        return (r.json['data'], r.headers['ETag'], r.json['mime'],
+                r.json['isfile'])
 
     def get(self, path):
         r = requests.get(self.get_url(path))

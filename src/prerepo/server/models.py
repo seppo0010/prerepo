@@ -2,6 +2,8 @@ import hashlib
 import os
 import redis
 
+import magic
+
 from .exceptions import NotFoundException
 
 
@@ -15,10 +17,13 @@ class File(object):
         return self.uid + ':' + path + ':type'
 
     def get_key(self, path):
-        return self.uid + ':' + path
+        return self.uid + ':' + path + ':content'
 
     def get_hash_key(self, path):
         return self.uid + ':' + path + ':hash'
+
+    def get_mime_key(self, path):
+        return self.uid + ':' + path + ':mime'
 
     def hashdata(self, data):
         return hashlib.md5(data).hexdigest()
@@ -32,24 +37,31 @@ class File(object):
             with self.redis.pipeline(transaction=False) as pipe:
                 pipe.get(self.get_key(path))
                 pipe.get(self.get_hash_key(path))
-                data, h = pipe.execute()
+                pipe.get(self.get_mime_key(path))
+                data, h, m = pipe.execute()
         else:
             with self.redis.pipeline(transaction=False) as pipe:
                 pipe.smembers(self.get_key(path))
                 pipe.get(self.get_hash_key(path))
                 data, h = pipe.execute()
-        return data, h, t == 'f'
+                m = 'directory'
+        return data, h, m, t == 'f'
 
     def gethash(self, path):
         return self.redis.get(self.get_hash_key(path))
 
     def createfile(self, path, data):
         hashdata = self.hashdata(data)
+        m = self.get_mime_key(path)
         if self.gethash(path) != hashdata:
             k, h, t = (self.get_key(path), self.get_hash_key(path),
                     self.get_key_type(path))
             parent, filename = os.path.dirname(path), os.path.basename(path)
             self.createdir(parent)
+
+            with magic.Magic(flags=magic.MAGIC_MIME_TYPE) as m:
+                mime = m.id_buffer(data)
+
             with self.redis.pipeline(transaction=True) as pipe:
                 while 1:
                     try:
@@ -59,11 +71,14 @@ class File(object):
                         pipe.set(k, data)
                         pipe.set(h, hashdata)
                         pipe.set(t, 'f')
+                        pipe.set(m, mime)
                         pipe.execute()
                         break
                     except redis.WatchError:
                         continue
-        return data, hashdata, True
+        else:
+            mime = self.redis.get(m)
+        return data, hashdata, mime, True
 
     def createdir(self, path):
         while 1:

@@ -26,8 +26,8 @@ def index():
     return redirect(url_for('index_hash', uid=str(uuid1())))
 
 
-def resource_response(data, md5, isfile):
-    return {'response': {'data': data, 'isfile': isfile},
+def resource_response(data, md5, mime, isfile):
+    return {'response': {'data': data, 'isfile': isfile, 'mime': mime},
         'headers': {'Content-MD5': md5, 'ETag': md5}}
 
 
