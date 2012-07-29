@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+#
+# Smart wrapper around Django admin that does a bunch of management checks.
+#
+# vim: set ts=2 sw=2:
+
+set -u
+set -e
+
+if [ "$TERM" = "xterm-color" ]; then
+	echo "Your terminal, xterm-color, is not supported." >&2
+	echo "Change declared terminal type to xterm-256color and try again." >&2
+	echo "exiting" >&2
+	exit 1
+elif [ "$TERM" = "dumb" ]; then
+	txtund=
+	txtbld=
+	txtred=
+	txtgrn=
+	bldred=
+	bldblu=
+	bldwht=
+	txtrst=
+	info=
+	pass=
+	warn=
+	ques=
+else
+	# Text color variables
+	txtund=$(tput sgr 0 1)					# Underline
+	txtbld=$(tput bold)							# Bold
+	txtred=$(tput setaf 1) 					#	red
+	txtgrn=$(tput setaf 2)					#	green
+	bldred=${txtbld}$(tput setaf 1) #	red
+	bldblu=${txtbld}$(tput setaf 4) #	blue
+	bldwht=${txtbld}$(tput setaf 7) #	white
+	txtrst=$(tput sgr0)							# Reset
+	info=${bldwht}*${txtrst}				# Feedback
+	pass=${bldblu}*${txtrst}
+	warn=${bldred}*${txtrst}
+	ques=${bldblu}?${txtrst}
+
+	echo -en "${txtbld}$(tput setaf 6)" >&2
+fi
+
+# Program start
+_BASEDIR=$(dirname "$0")
+BASEDIR=$(pwd "${_BASEDIR}")
+
+VIRTUALENV=virtualenv
+VIRTUALENVARGS=""
+set +e
+PEP8=$( which pep8 )
+if [ "$?" -ne "0" ]; then
+	PEP8="pep8-2.7"
+fi
+set -e
+
+function apt_check {
+	set +e
+	_CHECK=`aptitude show $1 | grep "State: installed"`
+	_STAT=$?
+	set -e
+	if [ "${_STAT}" -ne 0 ]; then
+		echo "aptitude package $1 must be installed." >&2
+		echo "You may need to enter your admin password to start installing." >&2
+		sudo apt-get install $1
+	fi
+}
+
+function port_check {
+	set +e
+	_CHECK=`port installed $1 | grep $1`
+	_STAT=$?
+	set -e
+	if [ "${_STAT}" -ne 0 ]; then
+		echo "MacPorts package $1 must be installed." >&2
+		echo "You may need to enter your admin password to start installing." >&2
+		sudo port install $1
+	fi
+}
+
+function osx_readline {
+	# MacPorts went into full-retard mode and followed Apple's lead in linking
+	# against libedit instead of readline when building Python 2.6+.  This
+	# breaks all sorts of awesome.  We need to work around by easy_install'ing
+	# the readline module for Python.
+	#
+	# Pip won't work according to iPython:
+	# Note that `pip install readline` generally DOES NOT WORK, because it
+	# installs to site-packages, which come *after* lib-dynload in sys.path,
+	# where readline is located.  It must be `easy_install readline`, or to a
+	# custom location on your PYTHONPATH (even --user comes after lib-dyload).
+	if [ -e "${VENV}"/.readline ]; then
+		echo "Found readline module." >&2
+	else
+		"${VENV}/bin/easy_install" readline
+		touch "${VENV}"/.readline
+fi
+}
+
+function check_git_hooks {
+	PRE_COMMIT_SRC="${BASEDIR}/bin/$1"
+	PRE_COMMIT="${BASEDIR}/.git/hooks/$1"
+	if [ -e "${PRE_COMMIT}" ]; then
+		set +e
+		diff "${PRE_COMMIT_SRC}" "${PRE_COMMIT}" > /dev/null 2>&1
+		_STAT=$?
+		set -e
+		if [ "${_STAT}" -ne 0 ]; then
+			echo -e "${txtred}git $1 hook is out of sync with /bin/$1!${txtrst}" >&2
+			echo -e "${txtred}   run \"diff ${PRE_COMMIT_SRC} ${PRE_COMMIT}\" to see differences${txtrst}" >&2
+		fi
+	else
+		echo -e "${txtgrn}git $1 hook not set, using bin/$1${txtrst}" >&2
+		cp "${PRE_COMMIT_SRC}" "${PRE_COMMIT}"
+		chmod 755 "${PRE_COMMIT}"
+	fi
+}
+
+function check_requirements {
+	cd "${BASEDIR}"
+	for req in requirements-server.txt requirements-client.txt requirements-dev.txt; do
+		if [ -e "$req" ]; then
+			pip install -qr ${req}
+		fi
+	done
+}
+
+function codecheck {
+	set +e
+	echo -en "${txtred}" >&2
+	"$@"
+	STATUS=$?
+	echo -en "${txtrst}" >&2
+	if [ "${STATUS}" -ne "0" ]; then
+		echo -en "${txtrst}${txtbld}" >&2
+		cat << EOF
+
+							|    HEY DICKDOG PROBLEMS FOUND!   |
+							|                                  |
+							| Style guide: http://goo.gl/5n3H0 |
+
+EOF
+		echo -en "${txtrst}" >&2
+		exit 1
+	fi
+	set -e
+}
+
+if [ $( uname ) = "Darwin" ]; then
+	# OS X - check macports dependencies.
+	echo "Detected OSX" >&2
+	VIRTUALENV=virtualenv-2.7
+	VIRTUALENVARGS="--distribute"
+
+	# Check for macports and dependencies.
+	_PORT=$( which port )
+	if [ "$?" -ne "0" ]; then
+		echo "MacPorts is required: http://www.macports.org/install.php" >&2
+		echo "exiting" >&2
+		exit 1
+	fi
+	port_check py27-virtualenv
+	port_check py27-pep8
+
+	# This won't solve problem described in osx_readline() But it's good to have
+	# in general outside of random virtualenvs.
+	port_check py27-readline
+fi
+
+if [ $( uname ) = "Linux" ]; then
+	apt_check python2.7-dev
+fi
+
+# Check for the local virtualenv
+VENV=${BASEDIR}/.$(basename "${BASEDIR}" | tr '[:lower:]' '[:upper:]')
+
+if [ -e "${VENV}" ]; then
+	echo "Working virtualenv: ${VENV}" >&2
+else
+	echo "Creating virtualenv: ${VENV}" >&2
+	${VIRTUALENV} ${VENV} ${VIRTUALENVARGS}
+fi
+
+set +u
+# Activation sometimes has unbound environment variables.
+source "${VENV}/bin/activate"
+if [ -z ${SKIP_REQUIREMENTS} ]; then
+	check_requirements
+fi
+set -u
+
+osx_readline
+check_git_hooks pre-commit
+echo -e "${txtrst}${txtbld}Checking flake8..." >&2
+codecheck flake8 "${BASEDIR}/src" "${BASEDIR}/tests"
+
+echo "Working directory: $BASEDIR" >&2
+echo -e "${txtrst}" >&2
+export PYTHONPATH="${BASEDIR}/src"
+if [ "$1" == "test" ]; then
+	shift
+	if [ $@ ]; then
+		python -m unittest $@
+	else
+		python -m unittest discover
+	fi
+elif [ "$1" == "shell" ]; then
+	shift
+	python $@
+elif [ "$1" == "server" ]; then
+	shift
+	python src/prerepo/server/main.py $@
+elif [ "$1" == "client" ]; then
+	shift
+	python src/prerepo/client/main.py $@
+else
+	"$@"
+fi
