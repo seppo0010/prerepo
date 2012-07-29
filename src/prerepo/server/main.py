@@ -43,7 +43,8 @@ def api(path=None, uid=None):
             response = resource_response(*f.get(path))
         elif request.method == 'POST':
             if request.form.get('isfile', False):
-                r = f.createfile(path, request.form.get('data', ''))
+                data = request.form.get('data', '').encode('utf8')
+                r = f.createfile(path, data)
                 response = resource_response(*r)
             else:
                 f.createdir(path)
